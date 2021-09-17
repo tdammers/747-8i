@@ -283,8 +283,7 @@ var AFDS = {
         var lmt=25;
         if(banklimit>0){lmt=banklimit * 5};
         me.bank_max.setValue(lmt);
-        lmt = -1 * lmt;
-        me.bank_min.setValue(lmt);
+        me.bank_min.setValue(-lmt);
 	me.bank_setting.setValue(me.bank_limit_list[banklimit]);
     },
 ###################
@@ -630,53 +629,50 @@ var AFDS = {
 		    me.remaining_distance.setValue(getprop("autopilot/route-manager/wp/dist"));
 	    	}
 
+                # Course error. This drives the autopilot.
+
 		var f = flightplan();
 		var geocoord = geo.aircraft_position();
+                var wpt_bearing = getprop("autopilot/route-manager/wp/true-bearing-deg");
+                var own_bearing = getprop("orientation/true-heading-deg");
+                var brg_err_deg = geo.normdeg180(wpt_bearing - own_bearing);
+                setprop("autopilot/internal/course-error", brg_err_deg);
 
-		var referenceCourse = f.pathGeod((max_wpt - 1), -getprop("autopilot/route-manager/distance-remaining-nm"));
-		var courseCoord = geo.Coord.new().set_latlon(referenceCourse.lat, referenceCourse.lon);
-		var CourseError = (geocoord.distance_to(courseCoord) / 1852) + 1;
-		var change_wp = abs(getprop("/autopilot/route-manager/wp/bearing-deg") - getprop("orientation/heading-deg"));
-		if(change_wp > 180) change_wp = (360 - change_wp);
-		CourseError += (change_wp / 20);
+		# var referenceCourse = f.pathGeod((max_wpt - 1), -getprop("autopilot/route-manager/distance-remaining-nm"));
+		# var courseCoord = geo.Coord.new().set_latlon(referenceCourse.lat, referenceCourse.lon);
+		# var CourseError = (geocoord.distance_to(courseCoord) / 1852) + 1;
+		# var change_wp = abs(getprop("/autopilot/route-manager/wp/bearing-deg") - getprop("orientation/heading-deg"));
+		# if(change_wp > 180) change_wp = (360 - change_wp);
+		# CourseError += (change_wp / 20);
 
-		var targetCourse = f.pathGeod((max_wpt - 1), (-getprop("autopilot/route-manager/distance-remaining-nm") + CourseError));
+		# var targetCourse = f.pathGeod((max_wpt - 1), (-getprop("autopilot/route-manager/distance-remaining-nm") + CourseError));
 
-		courseCoord = geo.Coord.new().set_latlon(targetCourse.lat, targetCourse.lon);
-		CourseError = (geocoord.course_to(courseCoord) - getprop("orientation/heading-deg"));
-		if(CourseError < -180) CourseError += 360;
-		elsif(CourseError > 180) CourseError -= 360;
-		setprop("autopilot/internal/course-error", CourseError);
+		# courseCoord = geo.Coord.new().set_latlon(targetCourse.lat, targetCourse.lon);
+		# CourseError = (geocoord.course_to(courseCoord) - getprop("orientation/heading-deg"));
+		# if(CourseError < -180) CourseError += 360;
+		# elsif(CourseError > 180) CourseError -= 360;
+		# setprop("autopilot/internal/course-error", CourseError);
 
-		var leg = f.currentWP();
-		var enroute = leg.courseAndDistanceFrom(targetCourse);
-#		setprop("autopilot/internal/course-deg", enroute[0]);
-		var groundspeed = getprop("/velocities/groundspeed-kt");
-		if(enroute[1] != nil)
-		{
-		    var wpt_dist = getprop("autopilot/route-manager/wp/dist");
-		    var wpt_eta = (wpt_dist / groundspeed * 3600);
-		    var brg_err = geo.normdeg180(getprop("/autopilot/route-manager/wp/true-bearing-deg") - getprop("/orientation/true-heading-deg")) * D2R;
-		    var wp_lead = 30;
-		    change_wp = abs(geo.normdeg180(getprop("/autopilot/route-manager/wp[1]/bearing-deg") - getprop("orientation/true-heading-deg")));
-		    if (getprop("instrumentation/airspeed-indicator/indicated-speed-kt") < 240 and getprop("position/altitude-ft") < 10000) {
-			wp_lead = 8;
-#			brg_err = 0;
-			# change_wp = 0;
-		    }
-		    if (wpt_dist < 16) {
-			wpt_eta = abs(wpt_eta * math.cos(brg_err));
-		    }
+                # Turn anticipation
+                var wp = flightplan().currentWP();
+                if (wp.fly_type != "flyOver" and me.heading_change_rate > 0.1) {
+                    var groundspeed = getprop("/velocities/groundspeed-kt");
+                    var wpt_dist = getprop("autopilot/route-manager/wp/dist");
+                    var turn_duration_s = 480 / me.heading_change_rate;
+                    var turn_circle = turn_duration_s * groundspeed / 3600.0;
+                    var turn_radius = turn_circle / math.pi / 2.0;
+                    var change_wp = abs(geo.normdeg180(getprop("/autopilot/route-manager/wp[1]/true-bearing-deg") - getprop("orientation/true-heading-deg")));
+                    var anticip_dist = math.max(0.5, turn_radius * math.sin(change_wp * 0.5 * D2R));
 
-		    if((getprop("gear/gear[1]/wow") == 0) and (getprop("gear/gear[2]/wow") == 0)) {
-		    	if (((me.heading_change_rate * change_wp) > wpt_eta) or (wpt_eta < wp_lead)) {
-			    if(atm_wpt < (max_wpt - 1)) {
-			    	atm_wpt += 1;
-			    	props.globals.getNode("/autopilot/route-manager/current-wp").setValue(atm_wpt);
-			    }
-		    	}
-		    }
-		}
+                    if((getprop("gear/gear[1]/wow") == 0) and (getprop("gear/gear[2]/wow") == 0)) {
+                        if (wpt_dist <= anticip_dist or atm_wpt == 0) {
+                            if(atm_wpt < (max_wpt - 1)) {
+                                atm_wpt += 1;
+                                props.globals.getNode("/autopilot/route-manager/current-wp").setValue(atm_wpt);
+                            }
+                        }
+                    }
+                }
 	    }
 
 	}elsif(me.step==6){
@@ -684,25 +680,24 @@ var AFDS = {
 	    banklimit=getprop("/instrumentation/afds/inputs/bank-limit-switch");
 	    if (banklimit==0 and ma_spd>0.93) {
 		lim=0;
-		me.heading_change_rate = 0.0;
 	    }
 	    if (banklimit==0 and ma_spd<=0.93 and ma_spd>0.87) {
 		lim=10;
-		me.heading_change_rate = 2.45 * 0.7;
 	    }
 	    if (banklimit==0 and ma_spd<=0.87 and ma_spd>0.80) {
 		lim=20;	
-		me.heading_change_rate = 1.125 * 0.7;
 	    }
 	    if (banklimit==0 and ma_spd<=0.80) {
 		lim=25;
-		me.heading_change_rate = 0.625 * 0.7;
 	    }
 	    if (banklimit==0){
         	props.globals.getNode("/instrumentation/afds/settings/bank-max").setValue(lim);
-		lim = -1 * lim;
-		props.globals.getNode("/instrumentation/afds/settings/bank-min").setValue(lim);
+		props.globals.getNode("/instrumentation/afds/settings/bank-min").setValue(-lim);
 	    }
+            else {
+                lim = banklimit * 5;
+            }
+            me.heading_change_rate = lim / 25;
 	}
 
         me.step+=1;
