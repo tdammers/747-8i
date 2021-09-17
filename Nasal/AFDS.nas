@@ -656,24 +656,19 @@ var AFDS = {
 		{
 		    var wpt_dist = getprop("autopilot/route-manager/wp/dist");
 		    var wpt_eta = (wpt_dist / groundspeed * 3600);
-		    var brg_err = getprop("/autopilot/route-manager/wp/true-bearing-deg") - getprop("/orientation/heading-deg");
-		    if (brg_err < 0) {
-			brg_err = brg_err + 360;
-		    }
+		    var brg_err = geo.normdeg180(getprop("/autopilot/route-manager/wp/true-bearing-deg") - getprop("/orientation/true-heading-deg")) * D2R;
 		    var wp_lead = 30;
-		    change_wp = abs(getprop("/autopilot/route-manager/wp[1]/bearing-deg") - getprop("orientation/heading-deg"));
+		    change_wp = abs(geo.normdeg180(getprop("/autopilot/route-manager/wp[1]/bearing-deg") - getprop("orientation/true-heading-deg")));
 		    if (getprop("instrumentation/airspeed-indicator/indicated-speed-kt") < 240 and getprop("position/altitude-ft") < 10000) {
 			wp_lead = 8;
 #			brg_err = 0;
-			change_wp = 0;
+			# change_wp = 0;
 		    }
-		    brg_err = math.pi * (brg_err / 180);
 		    if (wpt_dist < 16) {
 			wpt_eta = abs(wpt_eta * math.cos(brg_err));
 		    }
 
 		    if((getprop("gear/gear[1]/wow") == 0) and (getprop("gear/gear[2]/wow") == 0)) {
-		    	if(change_wp > 180) change_wp = (360 - change_wp);
 		    	if (((me.heading_change_rate * change_wp) > wpt_eta) or (wpt_eta < wp_lead)) {
 			    if(atm_wpt < (max_wpt - 1)) {
 			    	atm_wpt += 1;
